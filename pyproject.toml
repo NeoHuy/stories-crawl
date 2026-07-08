@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stories-crawl"
+version = "0.1.0"
+description = "Thu thập truyện về kho cá nhân"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "lightnovel-crawler>=4.10",
+    "beautifulsoup4>=4.12",
+]
+
+[project.scripts]
+crawl = "stories_crawl.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["stories_crawl*"]
