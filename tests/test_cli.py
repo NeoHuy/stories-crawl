@@ -26,6 +26,31 @@ def test_add_downloads_novel(runner):
     assert (lib_dir / "Truyện-Giả" / "raw" / "0001-Chương-1.md").exists()
 
 
+def test_add_unsupported_source(runner, monkeypatch):
+    cli, _ = runner
+    from stories_crawl.adapters.lncrawl_bridge import LncrawlAdapter
+
+    monkeypatch.setattr(registry, "NATIVE_ADAPTERS", [])
+    monkeypatch.setattr(LncrawlAdapter, "supports", classmethod(lambda cls, url: False))
+    result = cli.invoke(main, ["add", "https://unknown-site.example/book/1"])
+    assert result.exit_code != 0
+    assert "Nguồn không được hỗ trợ" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_add_metadata_fetch_failure(runner, monkeypatch):
+    cli, _ = runner
+
+    def _boom(self, url):
+        raise RuntimeError("mất kết nối")
+
+    monkeypatch.setattr(FakeAdapter, "get_novel_info", _boom)
+    result = cli.invoke(main, ["add", "https://fake-site.com/book/1"])
+    assert result.exit_code != 0
+    assert "Không lấy được thông tin truyện" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_add_existing_url_resumes(runner):
     cli, lib_dir = runner
     cli.invoke(main, ["add", "https://fake-site.com/book/1"])

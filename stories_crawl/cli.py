@@ -3,6 +3,7 @@ from pathlib import Path
 
 import click
 
+from .adapters.base import UnsupportedSourceError
 from .core import registry
 from .core.downloader import download_pending
 from .storage.db import Library
@@ -22,11 +23,19 @@ def main():
 
 
 def _crawl(lib: Library, lib_dir: Path, url: str, existing=None):
-    adapter_cls = registry.find_adapter_class(url)
+    try:
+        adapter_cls = registry.find_adapter_class(url)
+    except UnsupportedSourceError:
+        raise click.ClickException(
+            f"Nguồn không được hỗ trợ: {url} — xem 'crawl sources'"
+        )
     adapter = adapter_cls(url)
     try:
         click.echo(f"Đang lấy mục lục: {url}")
-        info = adapter.get_novel_info(url)
+        try:
+            info = adapter.get_novel_info(url)
+        except Exception as e:
+            raise click.ClickException(f"Không lấy được thông tin truyện: {e}")
         row = existing or lib.get_novel_by_url(url)
         if row is None:
             slug = make_slug(info.title, lib.existing_slugs())
