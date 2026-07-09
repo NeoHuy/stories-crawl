@@ -50,4 +50,10 @@ def download_pending(adapter, lib, library_dir: Path, novel, *,
         if i < len(chapters) - 1:
             sleep(random.uniform(*delay_range))
     lib.touch_novel(novel["id"])
+    if not lib.pending_chapters(novel["id"]):
+        lib.set_novel_status(novel["id"], "completed")
+    elif summary.failed > 0:
+        lib.set_novel_status(novel["id"], "error")
+    else:
+        lib.set_novel_status(novel["id"], "active")
     return summary

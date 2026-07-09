@@ -66,6 +66,23 @@ def test_short_content_marks_failed(env):
     assert not (tmp_path / "truyen-gia" / "raw" / "0001-Chương-1.md").exists()
 
 
+def test_status_completed_after_full_success(env):
+    tmp_path, lib, adapter, novel = env
+    download_pending(adapter, lib, tmp_path, novel,
+                     sleep=_no_sleep, log=lambda *_: None)
+    row = lib.get_novel(str(novel["id"]))
+    assert row["status"] == "completed"
+
+
+def test_status_error_after_permanent_failure(env):
+    tmp_path, lib, adapter, novel = env
+    adapter.fail_urls = {"https://fake-site.com/c/2"}  # luôn fail
+    download_pending(adapter, lib, tmp_path, novel,
+                     sleep=_no_sleep, log=lambda *_: None)
+    row = lib.get_novel(str(novel["id"]))
+    assert row["status"] == "error"
+
+
 def test_resume_skips_done(env):
     tmp_path, lib, adapter, novel = env
     download_pending(adapter, lib, tmp_path, novel,

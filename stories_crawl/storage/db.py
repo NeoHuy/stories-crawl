@@ -121,6 +121,13 @@ class Library:
                 "UPDATE novels SET updated_at = ? WHERE id = ?", (_now(), novel_id)
             )
 
+    def set_novel_status(self, novel_id, status):
+        with self.conn:
+            self.conn.execute(
+                "UPDATE novels SET status = ?, updated_at = ? WHERE id = ?",
+                (status, _now(), novel_id),
+            )
+
     def list_novels(self):
         return self.conn.execute(
             "SELECT n.*,"
