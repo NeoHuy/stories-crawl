@@ -15,6 +15,17 @@ def test_sanitize():
     assert sanitize("///") == "untitled"
 
 
+def test_sanitize_rejects_dot_only_paths():
+    # tránh path traversal: kết quả không bao giờ được là "." hoặc ".."
+    assert sanitize("..") == "untitled"
+    assert sanitize(".") == "untitled"
+    assert sanitize("...") == "untitled"
+    assert sanitize("..foo") == "foo"
+    result = sanitize("..")
+    assert result not in (".", "..")
+    assert not result.startswith(".")
+
+
 def test_make_slug_unique():
     assert make_slug("斗破苍穹", set()) == "斗破苍穹"
     assert make_slug("斗破苍穹", {"斗破苍穹"}) == "斗破苍穹-2"

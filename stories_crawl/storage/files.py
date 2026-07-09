@@ -6,6 +6,9 @@ _INVALID = re.compile(r'[\\/:*?"<>|\s]+')
 
 def sanitize(name: str) -> str:
     cleaned = _INVALID.sub("-", name).strip("-")
+    # tránh path traversal: "." hoặc ".." (hay chuỗi toàn dấu chấm) không
+    # được phép trở thành thành phần đường dẫn
+    cleaned = cleaned.lstrip(".")
     return cleaned or "untitled"
 
 
