@@ -33,3 +33,13 @@ cần mạng và hơi lâu; các lần sau dùng cache.
 
 Truyện dịch tiếng Việt: giai đoạn sau — file gốc nằm ở `raw/`, bản dịch sẽ
 sinh vào `vi/` cạnh đó (xem docs/superpowers/specs/).
+
+## Hạn chế đã biết
+
+- Chương có nội dung dưới 200 ký tự (ví dụ chỉ có lời tác giả) bị coi là
+  tải lỗi và sẽ được thử lại ở mỗi lần `crawl update` — đây là ngưỡng
+  chống chặn (anti-blocking heuristic) nên có thể tạo false positive với
+  các chương thật sự ngắn.
+- Một số nguồn zh trong danh sách của lightnovel-crawler hiện đang bị chặn
+  bởi Cloudflare/JS challenge (69shuba, ixdzs8, họ bq99...) nên `crawl add`
+  sẽ thất bại với các nguồn này. Đã xác nhận `piaotia.com` hoạt động tốt.
