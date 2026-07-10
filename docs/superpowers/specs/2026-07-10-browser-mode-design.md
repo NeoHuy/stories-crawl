@@ -1,136 +1,155 @@
-# Spec: Chế độ browser (auto-fallback vượt Cloudflare/Turnstile)
+# Spec: Chế độ browser fallback vượt Cloudflare (FlareSolverr sidecar)
 
 **Ngày:** 2026-07-10
-**Trạng thái:** Đã duyệt thiết kế
+**Trạng thái:** Đã duyệt thiết kế (sau spike so sánh)
 **Liên quan:** mở rộng tool stories-crawl ([spec gốc](2026-07-08-stories-crawl-design.md))
 
 ## Mục đích
 
-Cho phép tool tải được các nguồn bị Cloudflare/Turnstile chặn (ví dụ 69shuba),
-bằng cách render trang qua một trình duyệt thật (nodriver headful) thay cho
-HTTP thường khi chế độ nhanh bị chặn. Kích hoạt **tự động** (fallback), người
-dùng không cần biết trước trang nào bị chặn.
+Cho phép tool tải được các nguồn bị Cloudflare/Turnstile chặn (ví dụ 69shuba)
+khi chạy **trên server Linux + Docker** (tool là một phần của dự án web lưu trữ
+truyện). Khi chế độ HTTP nhanh bị chặn, tool **tự động** gọi sang một service
+FlareSolverr chạy container riêng để lấy HTML đã qua Cloudflare.
 
-## Bối cảnh đã kiểm chứng (spike 2026-07-10)
+## Bối cảnh & spike đã kiểm chứng (2026-07-10)
 
-Thử thực tế trên 69shuba (trang dùng Cloudflare Turnstile):
+Chế độ nhanh (`scraper` của lncrawl) ném `CloudflareException` trên 69shuba vì
+Turnstile cần captcha provider. Spike so sánh hai hướng trong container Linux
+arm64 trên 69shuba:
 
-| Cách | Kết quả |
-|---|---|
-| Chế độ nhanh (bộ giải tích hợp của `scraper`) | ❌ Ném `CloudflareException` — Turnstile cần captcha provider |
-| nodriver **headless** | ❌ Kẹt "Just a moment" 42s, bị phát hiện |
-| nodriver **headful** (cửa sổ Chrome hiện) | ✅ Qua trong ~7.5s tự động, lấy nội dung tiếng Trung sạch |
+| Hướng | Kết quả | Thời gian |
+|---|---|---|
+| nodriver + Xvfb (nhúng vào image) | ✅ PASS, nội dung tiếng Trung sạch | ~6s |
+| **FlareSolverr sidecar** (đã chọn) | ✅ PASS, nội dung tiếng Trung sạch | ~4s |
 
-Kết luận nền cho thiết kế: browser vượt được, nhưng **bắt buộc headful** và
-**cần phiên GUI**.
+Chọn FlareSolverr vì cô lập toàn bộ Chrome+Xvfb vào một container chuyên dụng:
+app image giữ nhẹ (không nhúng browser), crawler chỉ là HTTP client, browser
+crash/restart độc lập không kéo sập app.
+
+**Lưu ý trung thực về độ tin cậy:** lần spike FlareSolverr báo "Challenge not
+detected" — không thực sự đối mặt một Turnstile cứng lần đó (Cloudflare thách
+đố theo IP/xác suất). FlareSolverr dùng cùng công nghệ browser ẩn nên khả năng
+tương đương, nhưng chưa có bằng chứng ép giải Turnstile cứng. Thiết kế coi việc
+FlareSolverr thất bại một trang là **lỗi chương bình thường** (retry lần sau).
 
 ## Phạm vi
 
 **Trong phạm vi:**
+- `FlareSolverrClient`: HTTP client gọi FlareSolverr (`sessions.create`,
+  `request.get`, `sessions.destroy`).
 - Auto-fallback: chế độ nhanh gặp `CloudflareException` → chuyển cả truyện sang
-  chế độ browser và tải lại (resume bỏ qua chương đã lưu nhờ DB).
-- Cờ `--no-browser` trên `add`/`update` để tắt hẳn fallback (chỉ chạy chế độ nhanh).
-- Một `BrowserSession` (nodriver headful) dùng chung cho cả lượt tải một truyện.
-- Ghi đè khâu tải HTML của lncrawl, giữ nguyên logic parse của từng nguồn.
+  chế độ FlareSolverr và tải lại (DB resume bỏ qua chương đã `done`).
+- Ghi đè khâu tải HTML của lncrawl (`get_soup`) để đi qua FlareSolverr, giữ
+  nguyên logic parse của từng nguồn.
+- Cờ `--no-browser` tắt hẳn fallback.
+- Cấu hình endpoint FlareSolverr qua biến môi trường; docker-compose mẫu có
+  sidecar.
 
 **Ngoài phạm vi (YAGNI / giai đoạn sau):**
-- Hướng B "lấy vé một lần" (harvest `cf_clearance` rồi tải bằng HTTP nhanh) —
-  chỉ làm nếu tốc độ thành vấn đề.
-- Chế độ headless / chạy trên server không màn hình — Turnstile không cho.
+- Nhúng nodriver+Xvfb vào image (hướng A′ — đã loại sau spike).
+- Nguồn cần POST/JSON qua browser (chỉ ghi đè `get_soup` cho nguồn HTML GET).
 - Giải captcha tương tác cần click tay, residential proxy, Tor.
-- Cờ ép browser ngay từ đầu (`--browser`) — auto-fallback đã đủ.
+- Tích hợp sâu vào backend web (API/queue) — đây là spec riêng về sau; hiện tại
+  crawler vẫn là CLI/thư viện, chỉ thêm khả năng gọi FlareSolverr.
 
 ## Kiến trúc
 
-Mọi thao tác tải của lncrawl đi qua `crawler.get_soup(url)` →
-`crawler.scraper.get(...)`; logic parse riêng của từng nguồn
-(`read_novel_info`, `download_chapter_body`) gọi `get_soup` bên trong. Vì vậy
-chỉ cần **thay khâu tải HTML**, không đụng phần parse.
+Mọi thao tác tải của lncrawl đi qua `crawler.get_soup(url)`; logic parse riêng
+của từng nguồn (`read_novel_info`, `download_chapter_body`) gọi `get_soup` bên
+trong. Chỉ cần **thay khâu tải HTML** bằng FlareSolverr, không đụng phần parse.
 
 ```
 stories_crawl/
 ├── adapters/
-│   ├── browser.py        # MỚI: BrowserSession + lỗi BrowserBlockedError/BrowserUnavailableError
-│   └── lncrawl_bridge.py # SỬA: nhận cờ browser, ghi đè get_soup, bắt CloudflareException
-├── core/
-│   └── registry.py       # (không đổi)
-└── cli.py                # SỬA: cờ --no-browser, điều phối fallback
+│   ├── flaresolverr.py   # MỚI: FlareSolverrClient + FlareSolverrError
+│   └── lncrawl_bridge.py # SỬA: nhận client, ghi đè get_soup, cho CloudflareException truyền lên
+├── cli.py                # SỬA: cờ --no-browser, điều phối fallback, đọc config endpoint
+docker-compose.yml        # MỚI (mẫu): dịch vụ app + sidecar flaresolverr
 ```
 
-### `adapters/browser.py`
+### `adapters/flaresolverr.py`
 
 ```python
-class BrowserBlockedError(Exception): ...      # điều hướng xong nhưng không qua được challenge trong thời gian chờ
-class BrowserUnavailableError(Exception): ...   # không khởi chạy được Chrome (thiếu GUI/Chrome)
+class FlareSolverrError(Exception): ...   # service không tới được, hoặc trả lỗi/không giải được
 
-class BrowserSession:
-    def __init__(self, *, timeout: float = 45.0, poll: float = 5.0): ...
-    def __enter__(self) -> "BrowserSession"          # khởi chạy nodriver headful; lỗi → BrowserUnavailableError
-    def __exit__(self, *exc) -> None                 # luôn browser.stop() (đóng chắc chắn)
-    def fetch(self, url: str) -> str                 # điều hướng, chờ Cloudflare qua, trả HTML; quá timeout → BrowserBlockedError
+class FlareSolverrClient:
+    def __init__(self, endpoint: str, *, http=None, max_timeout_ms: int = 60000): ...
+    #   endpoint ví dụ "http://flaresolverr:8191"; http là đối tượng gửi POST (inject để test)
+    def __enter__(self) -> "FlareSolverrClient"   # tạo session (sessions.create), lưu session id
+    def __exit__(self, *exc) -> None              # sessions.destroy (nuốt lỗi), đóng chắc chắn
+    def fetch(self, url: str) -> str              # request.get qua session; trả HTML;
+    #   lỗi mạng / status != ok / HTML còn dấu hiệu chặn → FlareSolverrError
 ```
 
-- Sở hữu **một** Chrome headful, tái dùng cho mọi trang trong lượt tải.
-- `fetch`: điều hướng tới `url`, poll mỗi `poll` giây tới `timeout`. "Đã qua" =
-  tiêu đề/HTML hết dấu hiệu chặn (`just a moment`, `cf-turnstile`,
-  `challenge-platform`) **và** có nội dung thực (ngưỡng độ dài tối thiểu).
-- Logic "poll tới khi hết chặn" tách khỏi việc lái Chrome để test được: hàm
-  điều hướng thực tế là một seam có thể inject (fetcher giả trong test).
+- Dùng **một** session FlareSolverr cho cả lượt tải một truyện → tái dùng
+  cookie `cf_clearance`, tránh giải lại mỗi chương.
+- `fetch`: POST `{"cmd":"request.get","url":url,"session":sid,"maxTimeout":...}`;
+  kiểm tra `status=="ok"` và HTML không còn `just a moment`/`cf-turnstile`/
+  `challenge-platform`; nếu còn → `FlareSolverrError`.
+- Đối tượng `http` (mặc định `requests`) được inject để test không cần service.
 
 ### `adapters/lncrawl_bridge.py` (sửa)
 
-- `LncrawlAdapter(url, *, browser: bool = False, browser_session=None)`:
-  - `browser=False` (mặc định): như hiện tại.
-  - `browser=True`: sau khi `init_crawler`, ghi đè trên **instance**:
-    `crawler.get_soup = lambda u, *a, **k: crawler.make_soup(session.fetch(u))`
-    (và `get_response`/`post_soup` tương tự nếu nguồn HTML cần — tối thiểu là
-    `get_soup`). `session` là `BrowserSession` được truyền vào.
-- `supports()` không đổi.
-- Nhận diện bị chặn: cho `CloudflareException` của `scraper` truyền lên nguyên
-  vẹn (không bọc thành lỗi khác) để tầng điều phối bắt được.
+- `LncrawlAdapter(url, *, fetcher=None)`:
+  - `fetcher=None` (mặc định): như hiện tại (chế độ nhanh).
+  - `fetcher` là `FlareSolverrClient`: sau `init_crawler`, ghi đè trên
+    **instance**: `crawler.get_soup = lambda u, *a, **k: crawler.make_soup(fetcher.fetch(u))`.
+- Cho `CloudflareException` của `scraper` truyền lên nguyên vẹn để CLI bắt được.
 
 ### `cli.py` (sửa) — điều phối fallback
 
-Trong `_crawl` (hàm dùng chung của `add`/`update`), thêm tham số `allow_browser: bool`:
+`_crawl` thêm tham số `allow_browser: bool` và đọc endpoint từ env
+`STORIES_FLARESOLVERR_URL` (mặc định `http://localhost:8191`):
 
 1. Thử chế độ nhanh (`LncrawlAdapter(url)`), tải như hiện tại.
 2. Nếu `get_novel_info` hoặc vòng tải ném `CloudflareException`:
-   - Nếu `allow_browser` False (do `--no-browser`) → báo lỗi thân thiện, dừng.
-   - Ngược lại: đóng adapter nhanh; mở `BrowserSession`; tạo
-     `LncrawlAdapter(url, browser=True, browser_session=session)`; tải lại
-     (DB resume bỏ qua chương đã `done`). Thông báo cho người dùng "Trang bị
-     chặn — chuyển sang chế độ trình duyệt (một cửa sổ Chrome sẽ mở)".
-3. `BrowserUnavailableError` → `click.ClickException` gợi ý cần môi trường có màn hình.
-4. `BrowserBlockedError` xuyên suốt (không qua được) → chương/truyện tính là lỗi
-   như bình thường, báo cuối lượt.
+   - `allow_browser` False (do `--no-browser`) → `ClickException` thân thiện, dừng.
+   - Ngược lại: đóng adapter nhanh; mở `FlareSolverrClient(endpoint)`; tạo
+     `LncrawlAdapter(url, fetcher=client)`; tải lại (DB resume). Thông báo:
+     "Trang bị chặn — chuyển sang FlareSolverr".
+3. `FlareSolverrError` khi tạo session (service không tới được) →
+   `ClickException` gợi ý kiểm tra `STORIES_FLARESOLVERR_URL` / container.
+4. `FlareSolverrError` trên một chương → chương tính là lỗi như bình thường,
+   báo cuối lượt.
 
 Cờ: `crawl add [--no-browser] <url>`, `crawl update [--no-browser] <key>`.
+
+### `docker-compose.yml` (mẫu)
+
+Hai service: `app` (crawler, chạy CLI/worker) và `flaresolverr`
+(`ghcr.io/flaresolverr/flaresolverr:latest`, cổng 8191, `shm_size: 1g`). App
+đặt `STORIES_FLARESOLVERR_URL=http://flaresolverr:8191`. Cung cấp mẫu để tích
+hợp vào dự án web; không bắt buộc dùng đúng file này.
 
 ## Xử lý lỗi (tóm tắt)
 
 | Tình huống | Xử lý |
 |---|---|
-| Chế độ nhanh gặp Cloudflare, `--no-browser` bật | `ClickException`: gợi ý bỏ `--no-browser` để dùng trình duyệt |
-| Chrome không khởi chạy được (không GUI) | `BrowserUnavailableError` → `ClickException` thân thiện |
-| Qua timeout vẫn "Just a moment" | `BrowserBlockedError` → chương failed, retry lần update sau |
-| Lỗi giữa chừng | `BrowserSession.__exit__` luôn `browser.stop()`, không để Chrome mồ côi |
+| Chế độ nhanh gặp Cloudflare, `--no-browser` bật | `ClickException`: gợi ý bỏ `--no-browser` |
+| FlareSolverr không tới được (tạo session lỗi) | `FlareSolverrError` → `ClickException` kiểm tra URL/container |
+| FlareSolverr không giải được một trang | HTML còn dấu chặn → `FlareSolverrError` → chương failed, retry lần sau |
+| Lỗi giữa chừng | `FlareSolverrClient.__exit__` luôn `sessions.destroy`, không để session rác |
 
 ## Kiểm thử
 
-Không chạy Chrome thật trong suite tự động (chậm, cần mạng + GUI).
+Không gọi FlareSolverr thật trong suite tự động (cần container + mạng).
 
-- **`BrowserSession`**: inject fetcher giả trả HTML theo kịch bản (lần 1
-  "Just a moment", lần sau nội dung thật) → test vòng chờ, phát hiện "đã qua",
-  và timeout → `BrowserBlockedError`. Test `__exit__` luôn gọi stop.
-- **Ghi đè `get_soup`**: với `browser=True`, xác minh `crawler.get_soup(u)` gọi
-  `session.fetch(u)` rồi `make_soup`, không chạm `scraper`.
+- **`FlareSolverrClient`**: inject `http` giả trả JSON theo kịch bản → test
+  `fetch` bóc HTML khi `status=ok`; ném `FlareSolverrError` khi status lỗi,
+  khi HTML còn "Just a moment", khi `http` ném lỗi mạng. Test `__enter__/__exit__`
+  gọi đúng `sessions.create`/`sessions.destroy` và destroy luôn chạy khi lỗi.
+- **Ghi đè `get_soup`**: với `fetcher` truyền vào, xác minh `crawler.get_soup(u)`
+  gọi `fetcher.fetch(u)` rồi `make_soup`, không chạm `scraper`.
 - **Điều phối fallback (cli)**: fake adapter ném `CloudflareException` ở chế độ
-  nhanh → xác minh CLI mở BrowserSession (mock) và tải lại; với `--no-browser`
-  → xác minh dừng với thông báo, không mở browser.
-- **Smoke test thật (thủ công)**: `crawl add <url 69shuba>` → cửa sổ Chrome bật,
-  qua Turnstile, tải được vài chương nội dung sạch. Không đưa vào suite.
+  nhanh → xác minh CLI mở `FlareSolverrClient` (mock) và tải lại; với
+  `--no-browser` → dừng với thông báo, không mở client.
+- **Smoke test thật (thủ công)**: chạy FlareSolverr container + `crawl add
+  <url 69shuba>`, xác nhận tải được vài chương nội dung sạch. Không đưa vào suite.
 
-## Dependency
+## Dependency & triển khai
 
-Không thêm mới: `nodriver` đã được `lightnovel-crawler` kéo về; Chrome đã có sẵn
-trên máy. README ghi rõ chế độ browser cần môi trường có màn hình (GUI).
+- Python: dùng `requests` (đã có sẵn qua lncrawl) làm HTTP client — không thêm
+  dependency mới vào crawler.
+- Runtime: cần một container FlareSolverr chạy cạnh (sidecar). README + compose
+  mẫu hướng dẫn. FlareSolverr image hỗ trợ arm64 và amd64 (đã kiểm chứng arm64).
+- Không cần Chrome/Xvfb trong image app.
