@@ -31,6 +31,13 @@ class FakeCrawler:
     def close(self):
         self.closed = True
 
+    def make_soup(self, html):
+        from bs4 import BeautifulSoup
+        return BeautifulSoup(html, "html.parser")
+
+    def get_soup(self, url, *a, **k):
+        raise AssertionError("scraper get_soup must not be called in browser mode")
+
 
 class FakeSources:
     def __init__(self):
@@ -97,3 +104,22 @@ def test_close_swallows_errors(fake_sources):
 def test_list_supported_domains(fake_sources):
     assert list_supported_domains() == ["69shuba.com"]
     assert list_supported_domains("en") == ["royalroad.com"]
+
+
+def test_fetcher_overrides_get_soup(fake_sources):
+    from stories_crawl.adapters.lncrawl_bridge import LncrawlAdapter
+
+    class FakeFetcher:
+        def __init__(self):
+            self.fetched = []
+
+        def fetch(self, url):
+            self.fetched.append(url)
+            return f"<html><p>{url}</p></html>"
+
+    fetcher = FakeFetcher()
+    adapter = LncrawlAdapter("https://supported.com/book/1", fetcher=fetcher)
+    soup = adapter._crawler.get_soup("https://supported.com/c/9")
+    # đã đi qua fetcher, không chạm scraper
+    assert fetcher.fetched == ["https://supported.com/c/9"]
+    assert "https://supported.com/c/9" in soup.get_text()

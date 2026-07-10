@@ -34,10 +34,13 @@ def list_supported_domains(language: str = "zh") -> list:
 class LncrawlAdapter(BaseAdapter):
     name = "lncrawl"
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, *, fetcher=None):
         super().__init__(url)
         self._crawler = _sources().init_crawler(url)
         self._chapter_map = {}
+        if fetcher is not None:
+            crawler = self._crawler
+            crawler.get_soup = lambda u, *a, **k: crawler.make_soup(fetcher.fetch(u))
 
     @classmethod
     def supports(cls, url: str) -> bool:
