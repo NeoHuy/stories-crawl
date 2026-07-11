@@ -25,7 +25,7 @@ class FakeHttp:
         self.calls = []
 
     def post(self, url, json=None, timeout=None):
-        self.calls.append(json)
+        self.calls.append((url, json))
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -48,10 +48,11 @@ def test_session_lifecycle_and_fetch():
         out = c.fetch("https://x.com/1")
         assert "内容" in out
     # 3 lệnh: create, request.get (kèm session), destroy
-    cmds = [call["cmd"] for call in http.calls]
+    cmds = [payload["cmd"] for _url, payload in http.calls]
     assert cmds == ["sessions.create", "request.get", "sessions.destroy"]
-    assert http.calls[1]["session"] == "abc"
-    assert http.calls[1]["url"] == "https://x.com/1"
+    assert http.calls[1][1]["session"] == "abc"
+    assert http.calls[1][1]["url"] == "https://x.com/1"
+    assert all(url == "http://fs:8191/v1" for url, _payload in http.calls)
 
 
 def test_fetch_raises_on_blocked_html():

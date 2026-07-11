@@ -8,7 +8,7 @@ class FlareSolverrError(Exception):
 
 
 class FlareSolverrClient:
-    def __init__(self, endpoint, *, http=None, max_timeout_ms: int = 60000):
+    def __init__(self, endpoint: str, *, http=None, max_timeout_ms: int = 60000):
         self.endpoint = endpoint.rstrip("/") + "/v1"
         self.http = http or requests
         self.max_timeout_ms = max_timeout_ms
