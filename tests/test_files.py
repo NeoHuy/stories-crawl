@@ -37,6 +37,24 @@ def test_chapter_filename():
     assert chapter_filename(12345, "第12345章") == "12345-第12345章.md"
 
 
+def test_chapter_filename_truncates_long_title():
+    # title rất dài (chữ Hán = 3 byte/ký tự) không được làm filename vượt giới hạn
+    long_title = "章" * 300  # 900 byte
+    name = chapter_filename(1, long_title)
+    assert len(name.encode("utf-8")) <= 200
+    assert name.startswith("0001-")
+    assert name.endswith(".md")
+    # cắt đúng ranh giới ký tự — vẫn decode được, không có ký tự thay thế
+    name.encode("utf-8").decode("utf-8")
+    assert "�" not in name
+
+
+def test_write_chapter_long_title(tmp_path):
+    # ghi được dù title dài (trước đây có thể ném OSError)
+    rel = write_chapter(tmp_path, "s", 1, "第" * 300, "nội dung dài " * 50)
+    assert (tmp_path / rel).exists()
+
+
 def test_write_chapter(tmp_path):
     rel = write_chapter(tmp_path, "斗破苍穹", 1, "第一章", "内容" * 100)
     assert rel == "斗破苍穹/raw/0001-第一章.md"
