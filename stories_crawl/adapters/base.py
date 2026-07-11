@@ -24,7 +24,7 @@ class UnsupportedSourceError(Exception):
 class BaseAdapter(ABC):
     name: str = "base"
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, **_):
         self.url = url
 
     @classmethod

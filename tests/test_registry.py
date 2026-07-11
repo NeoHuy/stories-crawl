@@ -54,3 +54,10 @@ def test_unsupported_raises(monkeypatch):
     )
     with pytest.raises(UnsupportedSourceError):
         registry.find_adapter_class("https://unknown.org/x")
+
+
+def test_base_adapter_tolerates_fetcher_kwarg():
+    # CLI's fallback path calls adapter_cls(url, fetcher=client); any BaseAdapter
+    # subclass must accept and ignore extra kwargs instead of raising TypeError.
+    adapter = FakeNative("https://fake-site.com/book/1", fetcher=object())
+    assert adapter.url == "https://fake-site.com/book/1"
