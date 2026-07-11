@@ -30,6 +30,15 @@ CREATE TABLE IF NOT EXISTS chapters (
 """
 
 
+_TRANSLATE_COLUMNS = {
+    "translate_status": "TEXT NOT NULL DEFAULT 'pending'",
+    "vi_path": "TEXT",
+    "translate_error": "TEXT",
+    "translated_at": "TEXT",
+    "translator": "TEXT",
+}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -43,9 +52,21 @@ class Library:
         self.conn.execute("PRAGMA foreign_keys = ON")
         with self.conn:
             self.conn.executescript(SCHEMA)
+        self._migrate()
 
     def close(self):
         self.conn.close()
+
+    def _migrate(self):
+        existing = {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(chapters)")
+        }
+        with self.conn:
+            for col, decl in _TRANSLATE_COLUMNS.items():
+                if col not in existing:
+                    self.conn.execute(
+                        f"ALTER TABLE chapters ADD COLUMN {col} {decl}"
+                    )
 
     def create_novel(self, slug, title, author, source_url, adapter) -> int:
         now = _now()
@@ -129,6 +150,36 @@ class Library:
                 (error, _now(), chapter_id),
             )
 
+    def pending_translations(self, novel_id, include_done=False):
+        statuses = ["pending", "failed"]
+        if include_done:
+            statuses.append("done")
+        placeholders = ", ".join("?" for _ in statuses)
+        return self.conn.execute(
+            "SELECT * FROM chapters"
+            " WHERE novel_id = ? AND crawl_status = 'done'"
+            f" AND translate_status IN ({placeholders})"
+            " ORDER BY idx",
+            (novel_id, *statuses),
+        ).fetchall()
+
+    def mark_chapter_translated(self, chapter_id, vi_path, translator):
+        with self.conn:
+            self.conn.execute(
+                "UPDATE chapters SET translate_status = 'done', vi_path = ?,"
+                " translator = ?, translate_error = NULL, translated_at = ?"
+                " WHERE id = ?",
+                (vi_path, translator, _now(), chapter_id),
+            )
+
+    def mark_chapter_translate_failed(self, chapter_id, error):
+        with self.conn:
+            self.conn.execute(
+                "UPDATE chapters SET translate_status = 'failed',"
+                " translate_error = ?, translated_at = ? WHERE id = ?",
+                (error, _now(), chapter_id),
+            )
+
     def touch_novel(self, novel_id):
         with self.conn:
             self.conn.execute(
@@ -147,7 +198,9 @@ class Library:
             "SELECT n.*,"
             " COUNT(c.id) AS total_count,"
             " COALESCE(SUM(CASE WHEN c.crawl_status = 'done' THEN 1 ELSE 0 END), 0)"
-            "   AS done_count"
+            "   AS done_count,"
+            " COALESCE(SUM(CASE WHEN c.translate_status = 'done' THEN 1 ELSE 0 END), 0)"
+            "   AS translated_count"
             " FROM novels n LEFT JOIN chapters c ON c.novel_id = n.id"
             " GROUP BY n.id ORDER BY n.updated_at DESC"
         ).fetchall()
