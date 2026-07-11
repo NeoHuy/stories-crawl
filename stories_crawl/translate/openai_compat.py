@@ -28,9 +28,9 @@ class OpenAICompatTranslator(Translator):
                     {"role": "user", "content": build_user_message(title, text)},
                 ],
             )
+            out = (resp.choices[0].message.content or "").strip()
         except Exception as e:
             raise TranslateError(f"Lỗi gọi backend dịch: {e}") from e
-        out = (resp.choices[0].message.content or "").strip()
         if not out:
             raise TranslateError("Backend dịch trả về rỗng")
         vi_title, vi_text = parse_translation(out, title)

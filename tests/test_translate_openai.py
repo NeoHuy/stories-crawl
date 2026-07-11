@@ -57,3 +57,26 @@ def test_translate_network_error_wrapped():
                                client=FakeClient(error=ConnectionError("down")))
     with pytest.raises(TranslateError):
         t.translate_chapter("t", "x")
+
+
+class MalformedChat:
+    class _Completions:
+        @staticmethod
+        def create(**kwargs):
+            return SimpleNamespace(choices=[])
+
+    @property
+    def completions(self):
+        return MalformedChat._Completions()
+
+
+class MalformedClient:
+    def __init__(self):
+        self.chat = MalformedChat()
+
+
+def test_translate_malformed_response_wrapped():
+    t = OpenAICompatTranslator(model="m", base_url="http://x/v1",
+                               client=MalformedClient())
+    with pytest.raises(TranslateError):
+        t.translate_chapter("t", "x")
