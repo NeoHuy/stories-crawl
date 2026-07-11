@@ -69,3 +69,25 @@ def test_write_chapter_overwrites(tmp_path):
     write_chapter(tmp_path, "s", 1, "t", "cũ")
     rel = write_chapter(tmp_path, "s", 1, "t", "mới")
     assert "mới" in (tmp_path / rel).read_text(encoding="utf-8")
+
+
+def test_write_chapter_subdir(tmp_path):
+    from stories_crawl.storage.files import write_chapter, read_chapter_body
+    rel = write_chapter(tmp_path, "s", 1, "Nhan đề", "thân bài", subdir="vi")
+    assert rel == "s/vi/0001-Nhan-đề.md"
+    assert (tmp_path / "s" / "vi").is_dir()
+
+
+def test_read_chapter_body(tmp_path):
+    from stories_crawl.storage.files import write_chapter, read_chapter_body
+    rel = write_chapter(tmp_path, "s", 1, "第一章", "内容dòng1\n内容dòng2")
+    body = read_chapter_body(tmp_path, rel)
+    assert body == "内容dòng1\n内容dòng2"  # đã bỏ "# 第一章" và dòng trống
+
+
+def test_read_chapter_body_no_heading(tmp_path):
+    from stories_crawl.storage.files import read_chapter_body
+    p = tmp_path / "s" / "raw"
+    p.mkdir(parents=True)
+    (p / "x.md").write_text("chỉ có nội dung\nkhông heading\n", encoding="utf-8")
+    assert read_chapter_body(tmp_path, "s/raw/x.md") == "chỉ có nội dung\nkhông heading"
