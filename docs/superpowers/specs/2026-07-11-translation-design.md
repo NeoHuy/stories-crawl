@@ -15,8 +15,10 @@ là **lệnh riêng, opt-in** — chạy crawl thuần không kích hoạt dịc
 
 - Dịch bằng **LLM** (không dùng convert từ điển / MT miễn phí).
 - Backend cắm được, **không khóa nhà cung cấp**: Claude + mọi endpoint
-  OpenAI-compatible (LM Studio `:1234/v1`, Ollama `:11434/v1`, llama.cpp, vLLM).
-  Model bất kỳ sau endpoint đó (Qwen, Llama, Mistral...) đều dùng được.
+  OpenAI-compatible — **OpenAI/ChatGPT thật**, LM Studio `:1234/v1`,
+  Ollama `:11434/v1`, llama.cpp, vLLM, DeepSeek... Model bất kỳ sau endpoint đó
+  (GPT-4o, Qwen, Llama, Mistral...) đều dùng được.
+- **Cấu hình một lần qua env là cách chính**; cờ CLI chỉ để ghi đè tạm thời.
 - **Glossary thủ công tùy chọn** cho nhất quán tên riêng/thuật ngữ; mặc định
   không cần.
 - Dịch là **subcommand riêng** `translate`; `add`/`update` không tự dịch.
@@ -92,22 +94,26 @@ SDK Anthropic, phần còn lại dùng SDK openai).
 
 `build_translator(provider, model, base_url, api_key) -> Translator`:
 - `provider` ∈ `claude`/`anthropic` → `AnthropicTranslator`.
-- `provider` ∈ `lmstudio`/`ollama`/`openai` → `OpenAICompatTranslator`, tự điền
+- `provider` ∈ `openai`/`lmstudio`/`ollama` → `OpenAICompatTranslator`, tự điền
   `base_url` mặc định theo preset nếu chưa cho:
+  - `openai` → mặc định SDK openai (`https://api.openai.com/v1`) — tức OpenAI/
+    ChatGPT thật; đổi `base_url` để trỏ nhà cung cấp OpenAI-compatible khác.
   - `lmstudio` → `http://localhost:1234/v1`
   - `ollama` → `http://localhost:11434/v1`
-  - `openai` → không mặc định (bắt buộc có `base_url`).
 
-## Cấu hình (env, nhất quán `STORIES_*`)
+## Cấu hình (env là cách chính, nhất quán `STORIES_*`)
+
+Đặt env một lần (`.zshrc`/`.env`), sau đó `crawl translate <slug>` không cần cờ.
 
 | Env | Ý nghĩa |
 |---|---|
-| `STORIES_TRANSLATOR` | provider mặc định: `claude`/`lmstudio`/`ollama`/`openai` |
+| `STORIES_TRANSLATOR` | provider mặc định: `claude`/`openai`/`lmstudio`/`ollama` |
 | `STORIES_TRANSLATE_MODEL` | tên model |
 | `STORIES_TRANSLATE_BASE_URL` | endpoint OpenAI-compatible (ghi đè preset) |
-| `STORIES_TRANSLATE_API_KEY` | key Claude, hoặc chuỗi bất kỳ cho local |
+| `STORIES_TRANSLATE_API_KEY` | key Claude/OpenAI, hoặc chuỗi bất kỳ cho local |
 
-Cờ CLI `--provider/--model/--base-url` ghi đè env cho lần chạy.
+Cờ CLI `--provider/--model/--base-url` **chỉ để ghi đè tạm** env cho lần chạy;
+không bắt buộc khi đã cấu hình env.
 
 ## Lưu trữ & resume
 
@@ -125,8 +131,8 @@ Cờ CLI `--provider/--model/--base-url` ghi đè env cho lần chạy.
 
 ```bash
 crawl add <url>              # CHỈ crawl, không dịch
-crawl translate <slug|id>    # dịch chương chưa dịch của truyện đã có
-    [--provider claude|lmstudio|ollama|openai]
+crawl translate <slug|id>    # dịch chương chưa dịch (dùng cấu hình env)
+    [--provider claude|openai|lmstudio|ollama]  # ghi đè tạm env
     [--model <name>] [--base-url <url>]
     [--limit N]              # giới hạn số chương (thử trước)
     [--retranslate]          # dịch lại cả chương đã done
