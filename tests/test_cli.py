@@ -2,11 +2,29 @@ import pytest
 from click.testing import CliRunner
 
 from stories_crawl.adapters.base import BaseAdapter, ChapterRef, NovelInfo
-from stories_crawl.cli import main
+from stories_crawl.cli import _looks_blocked, main
 from stories_crawl.core import registry
 from stories_crawl.storage.db import Library
 
 from conftest import FakeAdapter
+
+
+class _Summary:
+    def __init__(self, done, failed):
+        self.done = done
+        self.failed = failed
+
+
+def test_looks_blocked_heuristic():
+    # 100% thất bại → bị chặn (giữ hành vi cũ)
+    assert _looks_blocked(_Summary(done=0, failed=2)) is True
+    # tải được một phần rồi phần còn lại bị chặn (lỗi >= thành công) → bị chặn
+    assert _looks_blocked(_Summary(done=5, failed=10)) is True
+    assert _looks_blocked(_Summary(done=5, failed=5)) is True
+    # chỉ vài chương hỏng thật giữa nhiều chương OK → KHÔNG kích hoạt fallback
+    assert _looks_blocked(_Summary(done=100, failed=2)) is False
+    # không lỗi → không bị chặn
+    assert _looks_blocked(_Summary(done=10, failed=0)) is False
 
 
 @pytest.fixture
