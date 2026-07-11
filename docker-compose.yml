@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    environment:
+      STORIES_FLARESOLVERR_URL: http://flaresolverr:8191
+      STORIES_LIBRARY: /data/library
+    volumes:
+      - ./library:/data/library
+    depends_on:
+      - flaresolverr
+    # ví dụ: docker compose run --rm app crawl add <url>
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      LOG_LEVEL: warning
+    shm_size: 1g
+    ports:
+      - "8191:8191"
