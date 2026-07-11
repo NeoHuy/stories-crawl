@@ -1,6 +1,20 @@
 services:
+  # FlareSolverr sidecar — luôn chạy để sẵn sàng khi trang bị Cloudflare chặn.
+  # Khởi động một lần: docker compose up -d flaresolverr
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      LOG_LEVEL: warning
+    shm_size: 1g
+    restart: unless-stopped
+    ports:
+      - "8191:8191"
+
+  # CLI crawl chạy theo lệnh (không phải service chạy nền).
+  # Ví dụ: docker compose run --rm app crawl add <url>
   app:
     build: .
+    profiles: ["cli"]
     environment:
       STORIES_FLARESOLVERR_URL: http://flaresolverr:8191
       STORIES_LIBRARY: /data/library
@@ -8,12 +22,3 @@ services:
       - ./library:/data/library
     depends_on:
       - flaresolverr
-    # ví dụ: docker compose run --rm app crawl add <url>
-
-  flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    environment:
-      LOG_LEVEL: warning
-    shm_size: 1g
-    ports:
-      - "8191:8191"
