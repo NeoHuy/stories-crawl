@@ -4,6 +4,7 @@ from pathlib import Path
 import click
 
 from .adapters.base import UnsupportedSourceError
+from .adapters.flaresolverr import FlareSolverrClient, FlareSolverrError
 from .core import registry
 from .core.downloader import download_pending
 from .storage.db import Library
@@ -22,54 +23,96 @@ def main():
     """stories-crawl — thu thập truyện về kho cá nhân."""
 
 
-def _crawl(lib: Library, lib_dir: Path, url: str, existing=None):
+def _attempt_crawl(lib, lib_dir, url, existing, adapter):
+    """Chạy một lượt tải với adapter đã tạo. Trả (blocked, row)."""
+    click.echo(f"Đang lấy mục lục: {url}")
+    try:
+        info = adapter.get_novel_info(url)
+    except Exception as e:
+        click.echo(f"  (không lấy được mục lục: {e})")
+        return True, None
+    if not info.chapters:
+        click.echo("  (mục lục rỗng)")
+        return True, None
+    row = existing or lib.get_novel_by_url(url)
+    if row is None:
+        slug = make_slug(info.title, lib.existing_slugs())
+        lib.create_novel(slug, info.title, info.author, url, adapter.name)
+        row = lib.get_novel_by_url(url)
+    click.echo(f"{info.title} — {info.author} ({len(info.chapters)} chương)")
+    new = lib.add_chapters(row["id"], info.chapters)
+    if new:
+        click.echo(f"{new} chương mới trong mục lục")
+    summary = download_pending(
+        adapter, lib, lib_dir, row, log=click.echo, **DOWNLOAD_KWARGS
+    )
+    click.echo(f"Hoàn tất: {summary.done} OK, {summary.failed} lỗi")
+    for idx, title, err in summary.failures:
+        click.echo(f"  - chương {idx} ({title}): {err}")
+    blocked = summary.done == 0 and summary.failed > 0
+    return blocked, row
+
+
+def _crawl(lib, lib_dir, url, existing=None, *, allow_browser=True):
     try:
         adapter_cls = registry.find_adapter_class(url)
     except UnsupportedSourceError:
         raise click.ClickException(
             f"Nguồn không được hỗ trợ: {url} — xem 'crawl sources'"
         )
+
     adapter = adapter_cls(url)
     try:
-        click.echo(f"Đang lấy mục lục: {url}")
-        try:
-            info = adapter.get_novel_info(url)
-        except Exception as e:
-            raise click.ClickException(f"Không lấy được thông tin truyện: {e}")
-        row = existing or lib.get_novel_by_url(url)
-        if row is None:
-            slug = make_slug(info.title, lib.existing_slugs())
-            lib.create_novel(slug, info.title, info.author, url, adapter_cls.name)
-            row = lib.get_novel_by_url(url)
-        click.echo(f"{info.title} — {info.author} ({len(info.chapters)} chương)")
-        new = lib.add_chapters(row["id"], info.chapters)
-        if new:
-            click.echo(f"{new} chương mới trong mục lục")
-        summary = download_pending(
-            adapter, lib, lib_dir, row, log=click.echo, **DOWNLOAD_KWARGS
-        )
-        click.echo(f"Hoàn tất: {summary.done} OK, {summary.failed} lỗi")
-        for idx, title, err in summary.failures:
-            click.echo(f"  - chương {idx} ({title}): {err}")
+        blocked, _ = _attempt_crawl(lib, lib_dir, url, existing, adapter)
     finally:
         adapter.close()
+    if not blocked:
+        return
+
+    if not allow_browser:
+        raise click.ClickException(
+            "Trang có vẻ bị Cloudflare chặn. Bỏ cờ --no-browser để thử qua FlareSolverr."
+        )
+
+    click.echo("Trang có vẻ bị chặn — chuyển sang FlareSolverr...")
+    endpoint = os.environ.get("STORIES_FLARESOLVERR_URL", "http://localhost:8191")
+    try:
+        with FlareSolverrClient(endpoint) as client:
+            adapter = adapter_cls(url, fetcher=client)
+            try:
+                blocked2, _ = _attempt_crawl(lib, lib_dir, url, existing, adapter)
+            finally:
+                adapter.close()
+    except FlareSolverrError as e:
+        raise click.ClickException(
+            f"Không dùng được FlareSolverr ({endpoint}): {e}. "
+            f"Kiểm tra container FlareSolverr và biến STORIES_FLARESOLVERR_URL."
+        )
+    if blocked2:
+        raise click.ClickException(
+            "Vẫn không tải được qua FlareSolverr — trang có thể chặn mạnh."
+        )
 
 
 @main.command()
 @click.argument("url")
-def add(url):
+@click.option("--no-browser", is_flag=True,
+              help="Tắt fallback FlareSolverr khi trang bị chặn.")
+def add(url, no_browser):
     """Thêm truyện mới vào kho và tải toàn bộ chương."""
     lib_dir = _library_dir()
     lib = Library(lib_dir / "library.db")
     try:
-        _crawl(lib, lib_dir, url)
+        _crawl(lib, lib_dir, url, allow_browser=not no_browser)
     finally:
         lib.close()
 
 
 @main.command()
 @click.argument("key")
-def update(key):
+@click.option("--no-browser", is_flag=True,
+              help="Tắt fallback FlareSolverr khi trang bị chặn.")
+def update(key, no_browser):
     """Tải các chương mới/còn thiếu của truyện đã có (theo slug hoặc id)."""
     lib_dir = _library_dir()
     lib = Library(lib_dir / "library.db")
@@ -77,7 +120,8 @@ def update(key):
         row = lib.get_novel(key)
         if row is None:
             raise click.ClickException(f"Không tìm thấy truyện: {key}")
-        _crawl(lib, lib_dir, row["source_url"], existing=row)
+        _crawl(lib, lib_dir, row["source_url"], existing=row,
+               allow_browser=not no_browser)
     finally:
         lib.close()
 

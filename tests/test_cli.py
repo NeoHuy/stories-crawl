@@ -1,6 +1,7 @@
 import pytest
 from click.testing import CliRunner
 
+from stories_crawl.adapters.base import BaseAdapter, ChapterRef, NovelInfo
 from stories_crawl.cli import main
 from stories_crawl.core import registry
 from stories_crawl.storage.db import Library
@@ -15,6 +16,83 @@ def runner(tmp_path, monkeypatch):
     # downloader chạy thật nhưng không ngủ
     monkeypatch.setattr("stories_crawl.cli.DOWNLOAD_KWARGS", {"sleep": lambda _: None})
     return CliRunner(), tmp_path / "library"
+
+
+class FakeBlockingAdapter(BaseAdapter):
+    """Chế độ nhanh (fetcher=None) trả rỗng; có fetcher thì trả chương thật."""
+
+    name = "fakeblock"
+
+    def __init__(self, url, *, fetcher=None):
+        super().__init__(url)
+        self.fetcher = fetcher
+
+    @classmethod
+    def supports(cls, url):
+        return "block-site.com" in url
+
+    def get_novel_info(self, url):
+        if self.fetcher is None:
+            return NovelInfo(title="", author="", url=url, chapters=[])
+        return NovelInfo(
+            title="Truyện Chặn", author="TG", url=url,
+            chapters=[ChapterRef(1, "Chương 1", url + "/1"),
+                      ChapterRef(2, "Chương 2", url + "/2")],
+        )
+
+    def get_chapter(self, chapter_url):
+        return "nội dung dài " * 50
+
+    def close(self):
+        pass
+
+
+class FakeClientCM:
+    """Giả FlareSolverrClient: context manager không cần mạng."""
+
+    last = None
+
+    def __init__(self, endpoint, **kw):
+        self.endpoint = endpoint
+        FakeClientCM.last = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def fetch(self, url):
+        return "x"
+
+
+@pytest.fixture
+def block_runner(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORIES_LIBRARY", str(tmp_path / "library"))
+    monkeypatch.setattr(registry, "NATIVE_ADAPTERS", [FakeBlockingAdapter])
+    monkeypatch.setattr("stories_crawl.cli.DOWNLOAD_KWARGS", {"sleep": lambda _: None})
+    monkeypatch.setattr("stories_crawl.cli.FlareSolverrClient", FakeClientCM)
+    return CliRunner(), tmp_path / "library"
+
+
+def test_add_falls_back_to_flaresolverr(block_runner):
+    cli, lib_dir = block_runner
+    result = cli.invoke(main, ["add", "https://block-site.com/book/1"])
+    assert result.exit_code == 0, result.output
+    assert "FlareSolverr" in result.output
+    assert "Truyện Chặn" in result.output
+    assert "2 OK" in result.output
+    assert (lib_dir / "Truyện-Chặn" / "raw" / "0001-Chương-1.md").exists()
+    assert FakeClientCM.last is not None  # client đã được mở
+
+
+def test_no_browser_flag_skips_fallback(block_runner):
+    cli, _ = block_runner
+    FakeClientCM.last = None
+    result = cli.invoke(main, ["add", "--no-browser", "https://block-site.com/book/1"])
+    assert result.exit_code != 0
+    assert "no-browser" in result.output.lower() or "FlareSolverr" in result.output
+    assert FakeClientCM.last is None  # không mở client
 
 
 def test_add_downloads_novel(runner):
@@ -45,9 +123,9 @@ def test_add_metadata_fetch_failure(runner, monkeypatch):
         raise RuntimeError("mất kết nối")
 
     monkeypatch.setattr(FakeAdapter, "get_novel_info", _boom)
-    result = cli.invoke(main, ["add", "https://fake-site.com/book/1"])
+    result = cli.invoke(main, ["add", "--no-browser", "https://fake-site.com/book/1"])
     assert result.exit_code != 0
-    assert "Không lấy được thông tin truyện" in result.output
+    assert "bị Cloudflare chặn" in result.output
     assert "Traceback" not in result.output
 
 
