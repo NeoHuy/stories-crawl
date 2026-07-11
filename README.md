@@ -51,8 +51,12 @@ không phải bật tay:
     docker compose run --rm app crawl add <url>
     docker compose run --rm app crawl list
 
-Kho truyện lưu ở `./library` trên máy (mount vào container). Tool tự trỏ tới
-FlareSolverr qua tên service `http://flaresolverr:8191`.
+Kho truyện gắn ra host, mặc định `./library` cạnh compose. Đặt kho ở nơi khác
+(ví dụ ổ dữ liệu riêng) bằng biến `STORIES_LIBRARY_HOST`:
+
+    STORIES_LIBRARY_HOST=/data/truyen docker compose run --rm app crawl add <url>
+
+Tool tự trỏ tới FlareSolverr qua tên service `http://flaresolverr:8191`.
 
 ### Cách dùng thủ công (không đóng gói tool vào Docker)
 

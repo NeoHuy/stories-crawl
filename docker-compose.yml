@@ -19,6 +19,8 @@ services:
       STORIES_FLARESOLVERR_URL: http://flaresolverr:8191
       STORIES_LIBRARY: /data/library
     volumes:
-      - ./library:/data/library
+      # Kho truyện gắn ra host. Đổi vị trí bằng biến STORIES_LIBRARY_HOST
+      # (đường dẫn tuyệt đối hoặc tương đối), mặc định ./library cạnh compose.
+      - ${STORIES_LIBRARY_HOST:-./library}:/data/library
     depends_on:
       - flaresolverr
