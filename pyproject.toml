@@ -19,6 +19,7 @@ crawl = "stories_crawl.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+translate = ["anthropic>=0.40", "openai>=1.40"]
 
 [tool.setuptools.packages.find]
 include = ["stories_crawl*"]

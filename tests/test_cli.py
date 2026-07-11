@@ -6,7 +6,7 @@ from stories_crawl.cli import _looks_blocked, main
 from stories_crawl.core import registry
 from stories_crawl.storage.db import Library
 
-from conftest import FakeAdapter
+from conftest import FakeAdapter, FakeTranslator
 
 
 class _Summary:
@@ -196,3 +196,56 @@ def test_sources(runner, monkeypatch):
     result = cli.invoke(main, ["sources"])
     assert result.exit_code == 0, result.output
     assert "69shuba.com" in result.output
+
+
+@pytest.fixture
+def trans_runner(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORIES_LIBRARY", str(tmp_path / "library"))
+    monkeypatch.setattr(registry, "NATIVE_ADAPTERS", [FakeAdapter])
+    monkeypatch.setattr("stories_crawl.cli.DOWNLOAD_KWARGS", {"sleep": lambda _: None})
+    monkeypatch.setattr("stories_crawl.cli.TRANSLATE_KWARGS", {"sleep": lambda _: None})
+    return CliRunner(), tmp_path / "library"
+
+
+def test_translate_command(trans_runner, monkeypatch):
+    cli, lib_dir = trans_runner
+    cli.invoke(main, ["add", "https://fake-site.com/book/1"])  # crawl trước
+    monkeypatch.setattr(
+        "stories_crawl.cli.build_translator", lambda **kw: FakeTranslator()
+    )
+    result = cli.invoke(main, ["translate", "Truyện-Giả"])
+    assert result.exit_code == 0, result.output
+    assert "Dịch xong: 2 OK" in result.output
+    assert (lib_dir / "Truyện-Giả" / "vi" / "0001-[VI]-Chương-1.md").exists()
+
+
+def test_translate_unknown_novel(trans_runner):
+    cli, _ = trans_runner
+    result = cli.invoke(main, ["translate", "không-có"])
+    assert result.exit_code != 0
+    assert "Không tìm thấy" in result.output
+
+
+def test_translate_config_error(trans_runner, monkeypatch):
+    cli, _ = trans_runner
+    cli.invoke(main, ["add", "https://fake-site.com/book/1"])
+    from stories_crawl.translate.base import TranslateError
+
+    def _boom(**kw):
+        raise TranslateError("Chưa cấu hình provider dịch")
+
+    monkeypatch.setattr("stories_crawl.cli.build_translator", _boom)
+    result = cli.invoke(main, ["translate", "Truyện-Giả"])
+    assert result.exit_code != 0
+    assert "provider" in result.output
+
+
+def test_list_shows_translation_progress(trans_runner, monkeypatch):
+    cli, _ = trans_runner
+    cli.invoke(main, ["add", "https://fake-site.com/book/1"])
+    monkeypatch.setattr(
+        "stories_crawl.cli.build_translator", lambda **kw: FakeTranslator()
+    )
+    cli.invoke(main, ["translate", "Truyện-Giả"])
+    result = cli.invoke(main, ["list"])
+    assert "dịch 2/2" in result.output

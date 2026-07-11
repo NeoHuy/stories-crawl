@@ -7,11 +7,18 @@ from .adapters.base import UnsupportedSourceError
 from .adapters.flaresolverr import FlareSolverrClient, FlareSolverrError
 from .core import registry
 from .core.downloader import download_pending
+from .core.translator_loop import translate_pending
 from .storage.db import Library
 from .storage.files import make_slug
+from .storage.glossary import read_glossary
+from .translate.base import TranslateError
+from .translate.registry import build_translator
 
 # test ghi đè để tắt sleep; runtime để trống dùng mặc định
 DOWNLOAD_KWARGS: dict = {}
+
+# test ghi đè để tắt sleep khi dịch
+TRANSLATE_KWARGS: dict = {}
 
 
 def _library_dir() -> Path:
@@ -136,6 +143,43 @@ def update(key, no_browser):
         lib.close()
 
 
+@main.command()
+@click.argument("key")
+@click.option("--provider", help="claude | openai | lmstudio | ollama (ghi đè env)")
+@click.option("--model", help="Tên model (ghi đè env)")
+@click.option("--base-url", help="Endpoint OpenAI-compatible (ghi đè env/preset)")
+@click.option("--limit", type=int, help="Chỉ dịch tối đa N chương")
+@click.option("--retranslate", is_flag=True, help="Dịch lại cả chương đã dịch")
+def translate(key, provider, model, base_url, limit, retranslate):
+    """Dịch các chương đã tải của một truyện sang tiếng Việt."""
+    lib_dir = _library_dir()
+    lib = Library(lib_dir / "library.db")
+    try:
+        row = lib.get_novel(key)
+        if row is None:
+            raise click.ClickException(f"Không tìm thấy truyện: {key}")
+        try:
+            translator = build_translator(
+                provider=provider, model=model, base_url=base_url
+            )
+        except TranslateError as e:
+            raise click.ClickException(str(e))
+        glossary = read_glossary(lib_dir, row["slug"])
+        try:
+            summary = translate_pending(
+                translator, lib, lib_dir, row, glossary,
+                limit=limit, include_done=retranslate,
+                log=click.echo, **TRANSLATE_KWARGS,
+            )
+        finally:
+            translator.close()
+        click.echo(f"Dịch xong: {summary.done} OK, {summary.failed} lỗi")
+        for idx, title, err in summary.failures:
+            click.echo(f"  - chương {idx} ({title}): {err}")
+    finally:
+        lib.close()
+
+
 @main.command("list")
 def list_cmd():
     """Liệt kê truyện trong kho kèm tiến độ."""
@@ -149,7 +193,9 @@ def list_cmd():
         for r in rows:
             click.echo(
                 f"[{r['id']}] {r['title']} ({r['slug']})"
-                f" — {r['done_count']}/{r['total_count']} chương — {r['status']}"
+                f" — {r['done_count']}/{r['total_count']} chương"
+                f" — dịch {r['translated_count']}/{r['total_count']}"
+                f" — {r['status']}"
             )
     finally:
         lib.close()

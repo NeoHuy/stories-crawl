@@ -76,6 +76,37 @@ Chạy `crawl` từ máy, chỉ bật FlareSolverr trong Docker:
 - File do container (chạy root) ghi vào `./library` sẽ thuộc quyền root; nên chọn
   **một** cách dùng (compose HOẶC thủ công) cho mỗi kho để tránh lẫn quyền sở hữu.
 
+## Dịch tiếng Việt (tùy chọn)
+
+Dịch các chương đã tải sang tiếng Việt bằng LLM. Cài thêm:
+
+    pip install -e '.[translate]'
+
+Cấu hình một lần qua biến môi trường (khuyến nghị), rồi chỉ cần `crawl translate <slug>`:
+
+    # Claude (nhúng API key của bạn)
+    export STORIES_TRANSLATOR=claude
+    export STORIES_TRANSLATE_MODEL=claude-opus-4-8
+    export STORIES_TRANSLATE_API_KEY=sk-ant-...
+
+    # hoặc OpenAI/ChatGPT
+    export STORIES_TRANSLATOR=openai
+    export STORIES_TRANSLATE_MODEL=gpt-4o
+    export STORIES_TRANSLATE_API_KEY=sk-...
+
+    # hoặc LLM local (LM Studio / Ollama) — không tốn phí
+    export STORIES_TRANSLATOR=ollama          # hoặc lmstudio
+    export STORIES_TRANSLATE_MODEL=qwen2.5
+
+    crawl translate <slug>        # dịch chương chưa dịch (resume được)
+    crawl translate <slug> --limit 5          # thử vài chương trước
+    crawl translate <slug> --provider lmstudio --model <tên>  # ghi đè tạm
+
+Bản dịch lưu ở `library/<slug>/vi/`. Đặt file `library/<slug>/glossary.md`
+(mỗi dòng `Hán = Việt`) để giữ nhất quán tên riêng/thuật ngữ giữa các chương.
+
+`crawl translate` là lệnh riêng — chạy `crawl add`/`update` không dịch gì.
+
 ## Hạn chế đã biết
 
 - Chương có nội dung dưới 200 ký tự (ví dụ chỉ có lời tác giả) bị coi là
