@@ -40,18 +40,41 @@ Một số nguồn (69shuba, ixdzs8, bq99...) chặn bằng Cloudflare/Turnstile
 độ tải nhanh cho kết quả rỗng, tool **tự động** thử lại qua một service
 [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) chạy container riêng.
 
-Chạy FlareSolverr rồi trỏ tool tới nó:
+### Cách dùng khuyến nghị: docker compose (FlareSolverr luôn sẵn sàng)
+
+Dựng cả tool lẫn FlareSolverr bằng `docker-compose.yml` đi kèm. FlareSolverr chạy
+thường trực (có `restart: unless-stopped`) nên khi trang bị Cloudflare là có sẵn,
+không phải bật tay:
+
+    docker compose build app                 # dựng image tool (lần đầu)
+    docker compose up -d flaresolverr         # bật sidecar một lần, để chạy nền
+    docker compose run --rm app crawl add <url>
+    docker compose run --rm app crawl list
+
+Kho truyện gắn ra host, mặc định `./library` cạnh compose. Đặt kho ở nơi khác
+(ví dụ ổ dữ liệu riêng) bằng biến `STORIES_LIBRARY_HOST`:
+
+    STORIES_LIBRARY_HOST=/data/truyen docker compose run --rm app crawl add <url>
+
+Tool tự trỏ tới FlareSolverr qua tên service `http://flaresolverr:8191`.
+
+### Cách dùng thủ công (không đóng gói tool vào Docker)
+
+Chạy `crawl` từ máy, chỉ bật FlareSolverr trong Docker:
 
     docker run -d --name fs -p 8191:8191 --shm-size=1g \
       ghcr.io/flaresolverr/flaresolverr:latest
     STORIES_FLARESOLVERR_URL=http://localhost:8191 crawl add <url>
 
-Hoặc dùng `docker-compose.yml` mẫu (service `app` + `flaresolverr`).
+### Ghi chú
 
-- Mặc định endpoint là `http://localhost:8191` (đổi bằng `STORIES_FLARESOLVERR_URL`).
+- Mặc định endpoint là `http://localhost:8191` (đổi bằng `STORIES_FLARESOLVERR_URL`;
+  trong compose đã đặt sẵn `http://flaresolverr:8191`).
 - Cờ `--no-browser` tắt fallback: `crawl add --no-browser <url>`.
 - FlareSolverr chạy trên Linux/Docker (kể cả server không màn hình). Tỉ lệ vượt
   Turnstile không đảm bảo 100%; chương không lấy được sẽ retry lần `update` sau.
+- File do container (chạy root) ghi vào `./library` sẽ thuộc quyền root; nên chọn
+  **một** cách dùng (compose HOẶC thủ công) cho mỗi kho để tránh lẫn quyền sở hữu.
 
 ## Hạn chế đã biết
 
