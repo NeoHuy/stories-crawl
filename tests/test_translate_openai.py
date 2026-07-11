@@ -7,9 +7,10 @@ from stories_crawl.translate.openai_compat import OpenAICompatTranslator
 
 
 class FakeChat:
-    def __init__(self, content=None, error=None):
+    def __init__(self, content=None, error=None, finish_reason=None):
         self._content = content
         self._error = error
+        self._finish_reason = finish_reason
         self.calls = []
 
     class _Completions:
@@ -21,7 +22,10 @@ class FakeChat:
             if self.outer._error:
                 raise self.outer._error
             msg = SimpleNamespace(content=self.outer._content)
-            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+            choice = SimpleNamespace(
+                message=msg, finish_reason=self.outer._finish_reason
+            )
+            return SimpleNamespace(choices=[choice])
 
     @property
     def completions(self):
@@ -29,8 +33,8 @@ class FakeChat:
 
 
 class FakeClient:
-    def __init__(self, content=None, error=None):
-        self.chat = FakeChat(content=content, error=error)
+    def __init__(self, content=None, error=None, finish_reason=None):
+        self.chat = FakeChat(content=content, error=error, finish_reason=finish_reason)
 
 
 def test_translate_ok():
@@ -48,6 +52,16 @@ def test_translate_ok():
 def test_translate_empty_raises():
     t = OpenAICompatTranslator(model="m", base_url="http://x/v1",
                                client=FakeClient(content="   "))
+    with pytest.raises(TranslateError):
+        t.translate_chapter("t", "x")
+
+
+def test_translate_truncated_raises():
+    t = OpenAICompatTranslator(
+        model="m", base_url="http://x/v1",
+        client=FakeClient(content="NHAN ĐỀ: t\n\nnội dung bị cắt",
+                          finish_reason="length"),
+    )
     with pytest.raises(TranslateError):
         t.translate_chapter("t", "x")
 

@@ -20,7 +20,7 @@ def translate_pending(translator, lib, library_dir: Path, novel, glossary=None, 
     if limit is not None:
         chapters = chapters[:limit]
     model_name = getattr(translator, "model", "unknown")
-    for i, ch in enumerate(chapters):
+    for ch in chapters:
         src = read_chapter_body(library_dir, ch["file_path"])
         last_error = ""
         for attempt in range(1, max_retries + 1):

@@ -7,21 +7,22 @@ from stories_crawl.translate.base import TranslateError
 
 
 class FakeMessages:
-    def __init__(self, blocks=None, error=None):
+    def __init__(self, blocks=None, error=None, stop_reason=None):
         self._blocks = blocks or []
         self._error = error
+        self._stop_reason = stop_reason
         self.calls = []
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
         if self._error:
             raise self._error
-        return SimpleNamespace(content=self._blocks)
+        return SimpleNamespace(content=self._blocks, stop_reason=self._stop_reason)
 
 
 class FakeClient:
-    def __init__(self, blocks=None, error=None):
-        self.messages = FakeMessages(blocks=blocks, error=error)
+    def __init__(self, blocks=None, error=None, stop_reason=None):
+        self.messages = FakeMessages(blocks=blocks, error=error, stop_reason=stop_reason)
 
 
 def _text_block(t):
@@ -41,6 +42,16 @@ def test_translate_ok():
 
 def test_translate_empty_raises():
     t = AnthropicTranslator(model="m", client=FakeClient(blocks=[_text_block("  ")]))
+    with pytest.raises(TranslateError):
+        t.translate_chapter("t", "x")
+
+
+def test_translate_truncated_raises():
+    client = FakeClient(
+        blocks=[_text_block("NHAN ĐỀ: t\n\nnội dung bị cắt")],
+        stop_reason="max_tokens",
+    )
+    t = AnthropicTranslator(model="m", client=client)
     with pytest.raises(TranslateError):
         t.translate_chapter("t", "x")
 

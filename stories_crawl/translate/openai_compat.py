@@ -4,7 +4,7 @@ from .prompt import build_system_prompt, build_user_message, parse_translation
 
 class OpenAICompatTranslator(Translator):
     def __init__(self, model, base_url=None, api_key="not-needed", *,
-                 client=None, max_tokens=4096):
+                 client=None, max_tokens=8192):
         self.model = model
         self.max_tokens = max_tokens
         if client is not None:
@@ -28,9 +28,13 @@ class OpenAICompatTranslator(Translator):
                     {"role": "user", "content": build_user_message(title, text)},
                 ],
             )
-            out = (resp.choices[0].message.content or "").strip()
+            choice = resp.choices[0]
+            out = (choice.message.content or "").strip()
+            finish = getattr(choice, "finish_reason", None)
         except Exception as e:
             raise TranslateError(f"Lỗi gọi backend dịch: {e}") from e
+        if finish == "length":
+            raise TranslateError("Bản dịch bị cắt do chạm giới hạn token (tăng max_tokens)")
         if not out:
             raise TranslateError("Backend dịch trả về rỗng")
         vi_title, vi_text = parse_translation(out, title)
