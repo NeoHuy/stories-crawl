@@ -12,6 +12,14 @@ def sanitize(name: str) -> str:
     return cleaned or "untitled"
 
 
+def _truncate_bytes(s: str, max_bytes: int) -> str:
+    """Cắt chuỗi còn tối đa max_bytes byte UTF-8, không xẻ đôi ký tự đa byte."""
+    encoded = s.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return s
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
 def make_slug(title: str, existing: set) -> str:
     base = sanitize(title)
     slug = base
@@ -22,8 +30,14 @@ def make_slug(title: str, existing: set) -> str:
     return slug
 
 
+# Giữ tổng filename an toàn dưới giới hạn của hầu hết filesystem (255 byte);
+# chừa chỗ cho tiền tố "NNNN-", đuôi ".md" và hậu tố ".tmp" lúc ghi tạm.
+_MAX_TITLE_BYTES = 180
+
+
 def chapter_filename(idx: int, title: str) -> str:
-    return f"{idx:04d}-{sanitize(title)}.md"
+    safe_title = _truncate_bytes(sanitize(title), _MAX_TITLE_BYTES)
+    return f"{idx:04d}-{safe_title}.md"
 
 
 def write_chapter(library_dir: Path, slug: str, idx: int, title: str, text: str) -> str:

@@ -11,6 +11,7 @@ dependencies = [
     "click>=8.1",
     "lightnovel-crawler>=4.10",
     "beautifulsoup4>=4.12",
+    "requests>=2",
 ]
 
 [project.scripts]

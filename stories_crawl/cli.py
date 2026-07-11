@@ -23,6 +23,17 @@ def main():
     """stories-crawl — thu thập truyện về kho cá nhân."""
 
 
+def _looks_blocked(summary) -> bool:
+    """Đoán một lượt tải có bị chặn (Cloudflare/JS) không, để kích hoạt fallback.
+
+    Coi là bị chặn khi có lỗi VÀ số chương lỗi ít nhất bằng số chương tải được
+    — bắt cả trường hợp tải được một phần rồi phần còn lại bị chặn, không chỉ
+    khi 100% thất bại. Truyện chỉ có vài chương hỏng thật (lỗi ít so với thành
+    công) thì không kích hoạt fallback nhầm.
+    """
+    return summary.failed > 0 and summary.failed >= summary.done
+
+
 def _attempt_crawl(lib, lib_dir, url, existing, adapter):
     """Chạy một lượt tải với adapter đã tạo. Trả (blocked, row)."""
     click.echo(f"Đang lấy mục lục: {url}")
@@ -49,8 +60,7 @@ def _attempt_crawl(lib, lib_dir, url, existing, adapter):
     click.echo(f"Hoàn tất: {summary.done} OK, {summary.failed} lỗi")
     for idx, title, err in summary.failures:
         click.echo(f"  - chương {idx} ({title}): {err}")
-    blocked = summary.done == 0 and summary.failed > 0
-    return blocked, row
+    return _looks_blocked(summary), row
 
 
 def _crawl(lib, lib_dir, url, existing=None, *, allow_browser=True):
