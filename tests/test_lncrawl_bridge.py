@@ -93,6 +93,14 @@ def test_get_chapter_strips_html(fake_sources):
     assert "<p>" not in text
 
 
+def test_get_chapter_unknown_url_raises_clear_error(fake_sources):
+    adapter = LncrawlAdapter("https://supported.com/book/1")
+    adapter.get_novel_info("https://supported.com/book/1")
+    # URL không có trong mục lục hiện tại → lỗi rõ ràng, không phải KeyError trần
+    with pytest.raises(ValueError, match="không có trong mục lục"):
+        adapter.get_chapter("https://x.com/c/999")
+
+
 def test_close_swallows_errors(fake_sources):
     adapter = LncrawlAdapter("https://supported.com/book/1")
     adapter.close()

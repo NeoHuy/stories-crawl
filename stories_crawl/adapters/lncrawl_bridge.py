@@ -64,7 +64,13 @@ class LncrawlAdapter(BaseAdapter):
         )
 
     def get_chapter(self, chapter_url: str) -> str:
-        ch = self._chapter_map[chapter_url]
+        ch = self._chapter_map.get(chapter_url)
+        if ch is None:
+            # Chương không còn trong mục lục hiện tại (nguồn đã xóa/đổi URL).
+            # Báo lỗi rõ ràng thay vì KeyError trần để log dễ hiểu.
+            raise ValueError(
+                f"Chương không có trong mục lục hiện tại: {chapter_url}"
+            )
         self._crawler.download_chapter(ch)
         html = ch.body or ""
         return BeautifulSoup(html, "html.parser").get_text("\n").strip()

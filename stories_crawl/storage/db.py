@@ -79,16 +79,30 @@ class Library:
 
     def add_chapters(self, novel_id, chapters) -> int:
         now = _now()
+        existing = {
+            r["idx"]
+            for r in self.conn.execute(
+                "SELECT idx FROM chapters WHERE novel_id = ?", (novel_id,)
+            )
+        }
         inserted = 0
         with self.conn:
             for ch in chapters:
-                cur = self.conn.execute(
-                    "INSERT OR IGNORE INTO chapters"
+                # Chèn chương mới; nếu đã có thì cập nhật title/source_url theo
+                # mục lục mới — trừ chương đã 'done' (giữ nguyên bản đã tải).
+                self.conn.execute(
+                    "INSERT INTO chapters"
                     " (novel_id, idx, title, source_url, crawl_status, updated_at)"
-                    " VALUES (?, ?, ?, ?, 'pending', ?)",
+                    " VALUES (?, ?, ?, ?, 'pending', ?)"
+                    " ON CONFLICT(novel_id, idx) DO UPDATE SET"
+                    "   title = excluded.title,"
+                    "   source_url = excluded.source_url,"
+                    "   updated_at = excluded.updated_at"
+                    " WHERE chapters.crawl_status != 'done'",
                     (novel_id, ch.idx, ch.title, ch.url, now),
                 )
-                inserted += cur.rowcount
+                if ch.idx not in existing:
+                    inserted += 1
         return inserted
 
     def pending_chapters(self, novel_id):

@@ -48,6 +48,40 @@ def test_add_chapters_idempotent(lib):
     assert lib.add_chapters(novel_id, chapters) == 1
 
 
+def _chapter(lib, novel_id, idx):
+    return lib.conn.execute(
+        "SELECT * FROM chapters WHERE novel_id = ? AND idx = ?", (novel_id, idx)
+    ).fetchone()
+
+
+def test_add_chapters_upserts_title_url_for_non_done(lib):
+    novel_id = _add_novel(lib)
+    lib.add_chapters(novel_id, [Ref(1, "第一章", "https://example.com/c/1"),
+                                Ref(2, "第二章", "https://example.com/c/2")])
+    # chương 1 đã tải xong; chương 2 vẫn pending
+    done_id = _chapter(lib, novel_id, 1)["id"]
+    lib.mark_chapter_done(done_id, "斗破苍穹/raw/0001.md")
+
+    # nguồn đổi URL/title cho cả hai + thêm chương 3
+    inserted = lib.add_chapters(novel_id, [
+        Ref(1, "第一章-sửa", "https://example.com/c/1-new"),
+        Ref(2, "第二章-sửa", "https://example.com/c/2-new"),
+        Ref(3, "第三章", "https://example.com/c/3"),
+    ])
+    assert inserted == 1  # chỉ chương 3 là mới
+
+    # chương 2 (chưa done) được cập nhật URL/title mới
+    ch2 = _chapter(lib, novel_id, 2)
+    assert ch2["title"] == "第二章-sửa"
+    assert ch2["source_url"] == "https://example.com/c/2-new"
+
+    # chương 1 (đã done) KHÔNG bị đụng
+    ch1 = _chapter(lib, novel_id, 1)
+    assert ch1["title"] == "第一章"
+    assert ch1["source_url"] == "https://example.com/c/1"
+    assert ch1["crawl_status"] == "done"
+
+
 def test_pending_and_status_transitions(lib):
     novel_id = _add_novel(lib)
     lib.add_chapters(novel_id, [Ref(1, "第一章", "https://example.com/c/1"),
