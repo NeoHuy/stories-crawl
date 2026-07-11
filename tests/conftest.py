@@ -1,4 +1,5 @@
 from stories_crawl.adapters.base import BaseAdapter, ChapterRef, NovelInfo
+from stories_crawl.translate.base import TranslatedChapter, Translator
 
 
 class FakeNetworkError(Exception):
@@ -39,6 +40,29 @@ class FakeAdapter(BaseAdapter):
         if chapter_url in self.fail_urls and self.calls[chapter_url] <= self.fail_times:
             raise FakeNetworkError("connection reset")
         return self.chapters[chapter_url]
+
+    def close(self):
+        self.closed = True
+
+
+class FakeTranslator(Translator):
+    """Translator giả cho test: dịch = thêm tiền tố, có thể giả lập lỗi/rỗng."""
+
+    model = "fake-model"
+
+    def __init__(self, fail_bodies=(), empty_bodies=()):
+        self.fail_bodies = set(fail_bodies)   # body nào thì ném lỗi
+        self.empty_bodies = set(empty_bodies) # body nào thì trả rỗng
+        self.calls = []
+        self.closed = False
+
+    def translate_chapter(self, title, text, glossary=None):
+        self.calls.append((title, text, glossary))
+        if text in self.fail_bodies:
+            raise RuntimeError("mô phỏng lỗi dịch")
+        if text in self.empty_bodies:
+            return TranslatedChapter(title=f"[VI] {title}", text="")
+        return TranslatedChapter(title=f"[VI] {title}", text=f"[VI] {text}")
 
     def close(self):
         self.closed = True
